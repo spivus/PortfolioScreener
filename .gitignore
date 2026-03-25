@@ -24,7 +24,7 @@ ENV/
 htmlcov/
 *.log
 
-# Node / NestJS
+# Node
 node_modules/
 npm-debug.log*
 yarn-debug.log*

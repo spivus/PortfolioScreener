@@ -1,24 +1,53 @@
-# PortfolioScreener
+# Portfolio Analyzer
 
-A web application for screening customer portfolio structures.
+Interne Web-App fuer Finanzberater um Kundenportfolios hochzuladen, zu analysieren und mit einem Musterportfolio zu vergleichen.
 
-## Getting Started
+## Voraussetzungen
 
-### Prerequisites
+- Python 3.11+
+- Node.js 18+
+- Supabase-Projekt (kostenloser Tier reicht)
 
-*Coming soon*
+## Setup
 
-### Installation
+### 1. Environment-Variablen
 
 ```bash
-git clone https://github.com/spivus/PortfolioScreener.git
-cd PortfolioScreener
+cp .env.example backend/.env
+cp frontend/.env.example frontend/.env.local
 ```
 
-## Usage
+Trage deine Keys in beide `.env`-Dateien ein.
 
-*Coming soon*
+### 2. Backend starten
 
-## License
+```bash
+cd backend
+uv run uvicorn app.main:app --reload --port 8000
+```
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Backend laeuft auf http://localhost:8000
+
+### 3. Datenbank einrichten
+
+Fuehre `backend/schema.sql` im Supabase SQL Editor aus.
+
+### 4. Frontend starten
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Frontend laeuft auf http://localhost:3000
+
+## Tech Stack
+
+| Bereich     | Technologie                          |
+| ----------- | ------------------------------------ |
+| Frontend    | Next.js 14, TypeScript, Tailwind CSS |
+| Backend     | FastAPI, Python 3.11                 |
+| Datenbank   | Supabase (PostgreSQL + Auth)         |
+| KI          | OpenRouter (gpt-oss-120b / Cerebras) |
+| Marktdaten  | Finnhub + Yahoo Finance             |
