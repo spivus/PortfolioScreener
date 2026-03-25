@@ -19,17 +19,17 @@ Interne Finanzberater (kein öffentlicher Zugang)
 ## Core Features (Reihenfolge = Priorität)
 1. **Portfolio-Upload** (Excel, CSV, PDF – beliebiges Format)
    - PDF: Nur Text-PDFs (kein OCR für gescannte Dokumente)
-   - Claude API extrahiert Positionen automatisch aus dem Dokument
+   - LLM extrahiert Positionen automatisch aus dem Dokument via OpenRouter/Cerebras
 2. **Strukturanalyse** (Währungen, Länder, Branchen, Assetklassen)
 3. **Musterportfolio-Vergleich**
    - Fehlende Positionen identifizieren
    - Gewichtungsabweichungen zeigen (Über-/Untergewichtung nach Branche, Region, Assetklasse)
-   - Es gibt genau **ein globales Musterportfolio** – sichtbar und editierbar für alle Berater (accountübergreifend)
+   - Es gibt genau **ein globales Musterportfolio** – sichtbar und editierbar für alle Berater
    - Das Musterportfolio kann nicht gelöscht werden, nur inhaltlich bearbeitet
    - Das Musterportfolio ist gleichzeitig die Startseite/Eingangsansicht der App
 4. **Marktdaten-Indikatoren** (200-Tage-Linie etc.) via Alpha Vantage
-5. **KI-Chat über Portfolio** (Claude API)
-6. **Geeignetheitstexte-Generator** (Claude API)
+5. **KI-Chat über Portfolio** (OpenRouter/Cerebras)
+6. **Geeignetheitstexte-Generator** (OpenRouter/Cerebras)
 
 ## Unterstützte Assetklassen
 - Aktien, ETFs, Investmentfonds
@@ -41,16 +41,43 @@ Interne Finanzberater (kein öffentlicher Zugang)
 - **Backend:** FastAPI, Python 3.11
 - **Datenbank:** Supabase (PostgreSQL + Auth)
 - **Marktdaten:** Alpha Vantage API
-- **KI:** Claude API (Anthropic, Modell: claude-sonnet-4-20250514)
-- **PDF-Parsing:** pdfplumber oder PyPDF2 (Text-Extraktion vor Claude-Aufruf)
+- **KI:** OpenRouter API (Modell: gpt-oss-120b via Cerebras als Inference Provider)
+- **PDF-Parsing:** pdfplumber (Text-Extraktion vor LLM-Aufruf)
 - **Hosting:** Vercel (Frontend), Railway (Backend)
 
 ## Projektstruktur
-```
+
+
 /frontend        → Next.js App
-/backend         → FastAPI App
+/backend         → FastAPI App (uv Projekt)
+/scripts         → Start/Stop Scripts für lokale Entwicklung
 CLAUDE.md        → Diese Datei (immer aktuell halten)
-```
+
+## AI Design
+
+Wenn du Code schreibst der LLM-Calls macht, nutze deinen Cerebras skill um OpenRouter mit dem gpt-oss-120b
+Modell und Cerebras als Inference Provider zu nutzen. Verwende Structured Outputs damit du
+die Ergebnisse interpretieren und die Felder in der Applikation befüllen kannst.
+
+LLM-Calls werden an folgenden Stellen gemacht:
+- **Portfolio-Parser:** Rohinhalt der hochgeladenen Datei → strukturiertes JSON
+- **KI-Chat:** Berater stellt Fragen zum Portfolio → LLM analysiert und antwortet
+- **Geeignetheitstexte:** Portfolio-Daten → fertiger Eignungstext
+
+Alle LLM-Calls laufen ausschließlich über das Backend (FastAPI), nie direkt vom Frontend.
+API-Key: OPENROUTER_API_KEY aus .env
+
+## Technical Design
+
+Das gesamte Projekt soll in einem Docker Container laufen:
+- Backend in /backend/ als uv Projekt mit FastAPI
+- Frontend in /frontend/ als Next.js Projekt
+- Frontend wird auf Vercel gehostet, Backend auf Railway
+- Lokale Start/Stop Scripts in /scripts/:
+  - scripts/start-mac.sh   → startet Backend + Frontend
+  - scripts/stop-mac.sh    → stoppt beide Services
+
+Umgebungsvariablen immer aus .env laden, nie hardcoden.
 
 ## Datenmodell
 
@@ -78,28 +105,35 @@ CLAUDE.md        → Diese Datei (immer aktuell halten)
 - POST /auth/login       → Login (Supabase Auth)
 
 ### Portfolio
-- POST /upload           → Datei hochladen + Claude parsed sie
+- POST /upload           → Datei hochladen + LLM parsed sie
 - GET  /portfolios       → Alle Portfolios des eingeloggten Beraters
 - GET  /portfolio/{id}   → Portfolio mit allen Positionen
 - DELETE /portfolio/{id} → Portfolio löschen
 
 ### Analyse
-- GET  /portfolio/{id}/analyse      → Strukturanalyse (Verteilung nach Assetklasse, Region etc.)
-- GET  /portfolio/{id}/vergleich    → Musterportfolio-Vergleich (fehlend + Gewichtung)
-- GET  /portfolio/{id}/marktdaten   → Marktindikatoren für alle Positionen
+- GET  /portfolio/{id}/analyse      → Strukturanalyse
+- GET  /portfolio/{id}/vergleich    → Musterportfolio-Vergleich
+- GET  /portfolio/{id}/marktdaten   → Marktindikatoren via Alpha Vantage
 
 ### Musterportfolio
-- GET  /musterportfolio             → Aktuelles Musterportfolio abrufen (= Startseite)
-- PUT  /musterportfolio             → Musterportfolio bearbeiten (jeder Berater darf ändern)
+- GET  /musterportfolio             → Aktuelles Musterportfolio (= Startseite)
+- PUT  /musterportfolio             → Musterportfolio bearbeiten
 
 ### KI
 - POST /chat             → KI-Chat Anfrage (mit Portfolio-Kontext)
 - POST /geeignetheit     → Geeignetheitstexte generieren
 
-## Wichtige Konventionen
+## Wichtige Konventionen  
 - Alle Geldbeträge intern in EUR speichern
 - Zahlen immer als float, nie als string
 - Deutsche Zahlenformate (1.234,56) vor Speicherung normalisieren
 - Fehler immer mit klarer deutscher Meldung an Frontend zurückgeben
 - API-Responses: JSON mit deutschen Feldnamen wo sinnvoll (z.B. `kunde_name`, `stueckzahl`)
 - Alle API-Endpunkte (außer Auth) erfordern gültigen Supabase JWT
+
+## Environment Variables
+OPENROUTER_API_KEY
+ALPHA_VANTAGE_API_KEY
+SUPABASE_URL
+SUPABASE_ANON_KEY
+NEXT_PUBLIC_API_URL
