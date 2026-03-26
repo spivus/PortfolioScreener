@@ -1,9 +1,16 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { uploadPortfolio } from "@/lib/api";
 
 export default function UploadZone() {
   const [isDragging, setIsDragging] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [kundeName, setKundeName] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -18,19 +25,87 @@ export default function UploadZone() {
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    // Upload-Logik kommt spaeter
     const files = Array.from(e.dataTransfer.files);
-    console.log("Dateien empfangen:", files);
+    if (files.length > 0) {
+      setPendingFile(files[0]);
+      setError(null);
+    }
   }, []);
 
   const handleFileSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files ? Array.from(e.target.files) : [];
-      console.log("Dateien ausgewaehlt:", files);
+      if (files.length > 0) {
+        setPendingFile(files[0]);
+        setError(null);
+      }
     },
     []
   );
 
+  async function handleUpload() {
+    if (!pendingFile || !kundeName.trim()) return;
+    setError(null);
+    setUploading(true);
+    try {
+      const result = await uploadPortfolio(pendingFile, kundeName.trim());
+      router.push(`/portfolio/${result.portfolio_id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload fehlgeschlagen");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function handleCancel() {
+    setPendingFile(null);
+    setKundeName("");
+    setError(null);
+  }
+
+  // Datei ausgewaehlt → Kundenname-Formular zeigen
+  if (pendingFile) {
+    return (
+      <div className="mx-auto max-w-2xl px-6">
+        <div className="rounded-2xl border-2 border-primary/30 bg-surface-card p-8 backdrop-blur-xl">
+          <p className="mb-1 text-sm text-gray-400">Ausgewaehlte Datei</p>
+          <p className="mb-4 font-medium text-white">{pendingFile.name}</p>
+
+          <label className="mb-1 block text-sm text-gray-400">
+            Kundenname
+          </label>
+          <input
+            type="text"
+            value={kundeName}
+            onChange={(e) => setKundeName(e.target.value)}
+            placeholder="z.B. Max Mustermann"
+            className="mb-4 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-white placeholder-gray-500 focus:border-primary focus:outline-none"
+          />
+
+          {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
+
+          <div className="flex gap-3">
+            <button
+              onClick={handleUpload}
+              disabled={uploading || !kundeName.trim()}
+              className="flex-1 rounded-lg bg-primary px-4 py-2 font-medium text-white transition-colors hover:bg-primary/80 disabled:opacity-50"
+            >
+              {uploading ? "Portfolio wird analysiert..." : "Hochladen"}
+            </button>
+            <button
+              onClick={handleCancel}
+              disabled={uploading}
+              className="rounded-lg border border-white/10 px-4 py-2 text-gray-400 transition-colors hover:bg-white/5 disabled:opacity-50"
+            >
+              Abbrechen
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Standard: Drag & Drop Zone
   return (
     <div className="mx-auto max-w-2xl px-6">
       <div
@@ -51,7 +126,6 @@ export default function UploadZone() {
             onChange={handleFileSelect}
           />
 
-          {/* Upload Icon */}
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-primary/10">
             <svg
               className={`h-7 w-7 transition-colors ${

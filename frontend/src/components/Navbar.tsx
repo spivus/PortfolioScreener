@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useAuth } from "@/components/AuthProvider";
 
 const navItems = [
   { label: "Dashboard", href: "/" },
@@ -13,6 +14,7 @@ const navItems = [
 
 export default function Navbar() {
   const pathname = usePathname();
+  const { isAuthenticated, user, logout } = useAuth();
 
   return (
     <nav className="sticky top-0 z-50 border-b border-white/5 bg-surface/80 backdrop-blur-xl">
@@ -41,22 +43,40 @@ export default function Navbar() {
 
         {/* Navigation Links */}
         <div className="flex items-center gap-1">
-          {navItems.map((item) => {
-            const isActive = pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                  isActive
-                    ? "bg-primary/10 text-primary-light"
-                    : "text-gray-400 hover:bg-white/5 hover:text-white"
-                }`}
+          {isAuthenticated ? (
+            <>
+              {navItems.map((item) => {
+                const isActive = pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                      isActive
+                        ? "bg-primary/10 text-primary-light"
+                        : "text-gray-400 hover:bg-white/5 hover:text-white"
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
+              <span className="ml-4 text-sm text-gray-400">{user?.name}</span>
+              <button
+                onClick={logout}
+                className="ml-2 rounded-lg px-3 py-2 text-sm font-medium text-gray-400 transition-colors hover:bg-white/5 hover:text-white"
               >
-                {item.label}
-              </Link>
-            );
-          })}
+                Abmelden
+              </button>
+            </>
+          ) : (
+            <Link
+              href="/login"
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/80"
+            >
+              Anmelden
+            </Link>
+          )}
         </div>
       </div>
     </nav>
