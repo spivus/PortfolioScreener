@@ -6,8 +6,7 @@ import { useAuth } from "@/components/AuthProvider";
 
 const navItems = [
   { label: "Dashboard", href: "/" },
-  { label: "Portfolio", href: "/portfolio" },
-  { label: "Vergleich", href: "/vergleich" },
+  { label: "Portfolios", href: "/portfolio" },
   { label: "KI-Chat", href: "/chat" },
   { label: "Einstellungen", href: "/einstellungen" },
 ];
@@ -17,17 +16,17 @@ export default function Navbar() {
   const { isAuthenticated, user, logout } = useAuth();
 
   return (
-    <nav className="sticky top-0 z-50 border-b border-white/5 bg-surface/80 backdrop-blur-xl">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
+    <nav className="sticky top-0 z-50 border-b border-surface-border bg-surface/80 backdrop-blur-xl">
+      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-6">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
+        <Link href="/" className="flex items-center gap-2.5 group">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-primary/20 transition-all group-hover:bg-primary/15 group-hover:ring-primary/30">
             <svg
-              className="h-4 w-4 text-white"
+              className="h-3.5 w-3.5 text-primary"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
-              strokeWidth={2}
+              strokeWidth={2.5}
             >
               <path
                 strokeLinecap="round"
@@ -36,44 +35,53 @@ export default function Navbar() {
               />
             </svg>
           </div>
-          <span className="text-lg font-semibold text-white">
+          <span className="text-sm font-semibold tracking-tight text-text-primary">
             Portfolio Analyzer
           </span>
         </Link>
 
         {/* Navigation Links */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5">
           {isAuthenticated ? (
             <>
               {navItems.map((item) => {
-                const isActive = pathname === item.href;
+                const isActive =
+                  pathname === item.href ||
+                  (item.href !== "/" && pathname.startsWith(item.href));
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                    className={`relative rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors ${
                       isActive
-                        ? "bg-primary/10 text-primary-light"
-                        : "text-gray-400 hover:bg-white/5 hover:text-white"
+                        ? "text-primary-light"
+                        : "text-text-muted hover:text-text-secondary"
                     }`}
                   >
                     {item.label}
+                    {isActive && (
+                      <span className="absolute -bottom-[17px] left-1/2 h-[2px] w-4 -translate-x-1/2 rounded-full bg-primary" />
+                    )}
                   </Link>
                 );
               })}
-              <span className="ml-4 text-sm text-gray-400">{user?.name}</span>
-              <button
-                onClick={logout}
-                className="ml-2 rounded-lg px-3 py-2 text-sm font-medium text-gray-400 transition-colors hover:bg-white/5 hover:text-white"
-              >
-                Abmelden
-              </button>
+              <div className="ml-4 flex items-center gap-2 border-l border-surface-border pl-4">
+                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
+                  {user?.name?.charAt(0)?.toUpperCase() || "?"}
+                </div>
+                <span className="text-[13px] text-text-muted">
+                  {user?.name}
+                </span>
+                <button
+                  onClick={logout}
+                  className="ml-1 rounded-md px-2 py-1 text-[12px] text-text-muted transition-colors hover:bg-surface-hover hover:text-text-secondary"
+                >
+                  Abmelden
+                </button>
+              </div>
             </>
           ) : (
-            <Link
-              href="/login"
-              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/80"
-            >
+            <Link href="/login" className="btn-primary text-[13px]">
               Anmelden
             </Link>
           )}

@@ -28,7 +28,13 @@ export async function authFetch(
   if (!(options.body instanceof FormData) && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
   }
-  return fetch(`${API_URL}${path}`, { ...options, headers });
+  const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+  if (res.status === 401) {
+    clearToken();
+    localStorage.removeItem("user");
+    window.location.href = "/login";
+  }
+  return res;
 }
 
 export async function login(

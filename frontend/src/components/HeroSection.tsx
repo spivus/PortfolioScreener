@@ -9,7 +9,7 @@ export default function HeroSection() {
       <div className="relative mx-auto max-w-3xl">
         <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-4 py-1.5 text-sm text-primary-light">
           <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-          Powered by Claude AI
+          KI-gestuetzte Analyse
         </div>
 
         <h1 className="mb-4 text-5xl font-bold tracking-tight text-white">

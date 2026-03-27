@@ -10,5 +10,6 @@ ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "")
 
 CORS_ORIGINS = [
     "http://localhost:3000",
-    "https://*.vercel.app",
 ]
+
+CORS_ORIGIN_REGEX = r"https://.*\.vercel\.app"

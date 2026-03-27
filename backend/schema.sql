@@ -34,6 +34,7 @@ create table if not exists position (
     portfolio_id  uuid not null references portfolio(id) on delete cascade,
     isin          text,
     wkn           text,
+    symbol        text,
     name          text not null,
     stueckzahl    double precision not null default 0,
     kurs          double precision not null default 0,
@@ -41,7 +42,11 @@ create table if not exists position (
     land          text,
     branche       text,
     assetklasse   text,
-    typ           text check (typ in ('Aktie','ETF','Fonds','Anleihe','Zertifikat','Sonstige'))
+    typ           text check (typ in ('Aktie','ETF','Fonds','Anleihe','Zertifikat','Sonstige')),
+    aktueller_kurs double precision,
+    sma_200       double precision,
+    ytd_performance double precision,
+    marktdaten_aktualisiert_am timestamptz
 );
 
 alter table position enable row level security;
@@ -59,6 +64,16 @@ create policy "Positionen ueber Portfolio-Berater sichtbar"
 create policy "Positionen ueber Portfolio-Berater einfuegen"
     on position for insert
     with check (
+        exists (
+            select 1 from portfolio p
+            where p.id = position.portfolio_id
+              and p.berater_id = auth.uid()
+        )
+    );
+
+create policy "Positionen ueber Portfolio-Berater aktualisieren"
+    on position for update
+    using (
         exists (
             select 1 from portfolio p
             where p.id = position.portfolio_id

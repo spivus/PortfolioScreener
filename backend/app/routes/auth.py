@@ -49,6 +49,9 @@ async def login(body: LoginRequest):
     except Exception as e:
         raise HTTPException(status_code=401, detail="Ungueltige Anmeldedaten")
 
+    if not result.session:
+        raise HTTPException(status_code=401, detail="Login fehlgeschlagen – keine Session erhalten")
+
     return {
         "access_token": result.session.access_token,
         "user": {

@@ -16,15 +16,16 @@ POSITION_SCHEMA = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "isin": {"type": ["string", "null"]},
-                    "wkn": {"type": ["string", "null"]},
+                    "isin": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                    "wkn": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                    "symbol": {"anyOf": [{"type": "string"}, {"type": "null"}]},
                     "name": {"type": "string"},
                     "stueckzahl": {"type": "number"},
                     "kurs": {"type": "number"},
                     "waehrung": {"type": "string"},
-                    "land": {"type": ["string", "null"]},
-                    "branche": {"type": ["string", "null"]},
-                    "assetklasse": {"type": ["string", "null"]},
+                    "land": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                    "branche": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                    "assetklasse": {"anyOf": [{"type": "string"}, {"type": "null"}]},
                     "typ": {
                         "type": "string",
                         "enum": [
@@ -33,7 +34,7 @@ POSITION_SCHEMA = {
                         ],
                     },
                 },
-                "required": ["name", "stueckzahl", "kurs", "waehrung", "typ"],
+                "required": ["name", "stueckzahl", "kurs", "waehrung", "typ", "branche", "symbol"],
             },
         }
     },
@@ -47,10 +48,17 @@ Wertpapierpositionen als strukturiertes JSON.
 
 Regeln:
 - Erkenne ISIN (12 Zeichen, beginnt mit Laendercode) und WKN (6 Zeichen) wenn vorhanden
+- Erkenne Ticker-Symbole (z.B. AAPL, MSFT, NVDA) und setze sie in das Feld 'symbol'. \
+Deutsche Aktien brauchen den Suffix .DE (z.B. SAP.DE, ALV.DE, BAS.DE, DTE.DE, DHL.DE)
 - Normalisiere deutsche Zahlenformate: 1.234,56 -> 1234.56
 - Waehrung als ISO-Code (EUR, USD, CHF etc.)
-- Wenn Land/Branche/Assetklasse nicht erkennbar, setze null
+- Branche ist ein Pflichtfeld! Wenn das Dokument eine Spalte wie 'Sektor', 'Branche' oder \
+'Industrie' hat, uebernimm den Wert direkt. Ansonsten leite die Branche aus dem \
+Unternehmensnamen ab (z.B. Apple -> Technologie, Allianz -> Versicherung, BASF -> Chemie). \
+Nur null wenn absolut nicht ableitbar
+- Wenn Land/Assetklasse nicht erkennbar, setze null
 - typ muss einer von: Aktie, ETF, Fonds, Anleihe, Zertifikat, Sonstige sein
+- Ignoriere Summenzeilen (z.B. "Gesamt", "Total", "Summe")
 - Gib NUR die Positionen zurueck, keine Kommentare"""
 
 

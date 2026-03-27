@@ -1,0 +1,1 @@
+-- Seed-Datei fuer lokale Entwicklung (leer, Musterportfolio wird spaeter via App erstellt)

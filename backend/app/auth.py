@@ -12,7 +12,10 @@ async def get_current_user(request: Request):
 
     token = auth_header.removeprefix("Bearer ")
     sb = get_supabase()
-    user_response = sb.auth.get_user(token)
+    try:
+        user_response = sb.auth.get_user(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Ungueltiger oder abgelaufener Token")
 
     if not user_response or not user_response.user:
         raise HTTPException(status_code=401, detail="Ungueltiger Token")
