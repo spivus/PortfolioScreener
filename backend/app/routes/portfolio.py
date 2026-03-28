@@ -5,7 +5,7 @@ import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Request
 from app.auth import get_current_user
 from app.database import get_supabase_for_user
-from app.alpha_vantage import fetch_market_data
+from app.finnhub import fetch_market_data, get_recommendation
 
 router = APIRouter(tags=["Portfolio"])
 
@@ -101,14 +101,18 @@ async def refresh_market_data(
             continue
 
         data = await fetch_market_data(pos["symbol"])
-        if any(v is not None for v in data.values()):
-            sb.table("position").update({
-                **data,
-                "marktdaten_aktualisiert_am": "now()",
-            }).eq("id", pos["id"]).execute()
-            updated += 1
+        rec = await get_recommendation(pos["symbol"])
 
-        await asyncio.sleep(12)
+        update_fields = {k: v for k, v in data.items() if v is not None}
+        if rec:
+            update_fields["analysten_buy"] = rec["buy"]
+            update_fields["analysten_hold"] = rec["hold"]
+            update_fields["analysten_sell"] = rec["sell"]
+
+        if update_fields:
+            update_fields["marktdaten_aktualisiert_am"] = "now()"
+            sb.table("position").update(update_fields).eq("id", pos["id"]).execute()
+            updated += 1
 
     return {"aktualisiert": updated, "gesamt": len(positions.data)}
 

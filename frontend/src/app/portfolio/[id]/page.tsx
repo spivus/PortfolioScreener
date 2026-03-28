@@ -31,6 +31,9 @@ interface Position {
   gewichtung: number;
   rendite: number;
   ytd_performance: number | null;
+  analysten_buy: number | null;
+  analysten_hold: number | null;
+  analysten_sell: number | null;
   marktdaten_aktualisiert_am: string | null;
 }
 
@@ -400,6 +403,7 @@ export default function PortfolioDetailPage() {
                     <th className="text-right">Gewicht</th>
                     <th className="text-right">Rendite</th>
                     <th className="text-right">YTD</th>
+                    <th className="text-center">Analysten (B/H/S)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -449,6 +453,19 @@ export default function PortfolioDetailPage() {
                       </td>
                       <td className="text-right">
                         <PctCell value={pos.ytd_performance} />
+                      </td>
+                      <td className="text-center">
+                        {pos.analysten_buy != null ? (
+                          <span className="text-xs font-mono">
+                            <span className="text-accent-emerald">{pos.analysten_buy}</span>
+                            {" / "}
+                            <span className="text-text-muted">{pos.analysten_hold}</span>
+                            {" / "}
+                            <span className="text-accent-rose">{pos.analysten_sell}</span>
+                          </span>
+                        ) : (
+                          <span className="text-text-muted">--</span>
+                        )}
                       </td>
                     </tr>
                   ))}

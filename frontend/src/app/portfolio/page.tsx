@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { authFetch } from "@/lib/api";
-import Link from "next/link";
 import RequireAuth from "@/components/RequireAuth";
+import UploadZone from "@/components/UploadZone";
 
 interface PortfolioSummary {
   id: string;
@@ -64,37 +64,36 @@ export default function PortfolioListPage() {
     <div className="mx-auto max-w-4xl px-6 py-8">
       <h1 className="mb-6 text-2xl font-bold text-white">Meine Portfolios</h1>
 
+      {/* Upload */}
+      <div className="mb-8 opacity-0 animate-slide-up stagger-1">
+        <UploadZone />
+      </div>
+
+      {/* Portfolio-Liste */}
       {portfolios.length === 0 ? (
-        <div className="rounded-2xl border-2 border-dashed border-white/10 p-12 text-center">
-          <p className="text-gray-400">
-            Noch keine Portfolios vorhanden. Laden Sie ein Portfolio auf der
-            Startseite hoch.
+        <div className="rounded-2xl border-2 border-dashed border-surface-border p-12 text-center">
+          <p className="text-text-muted">
+            Noch keine Portfolios vorhanden. Laden Sie oben ein Portfolio hoch.
           </p>
-          <Link
-            href="/"
-            className="mt-4 inline-block rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/80"
-          >
-            Portfolio hochladen
-          </Link>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           {portfolios.map((p) => (
             <div
               key={p.id}
-              className="group relative rounded-xl border border-white/10 bg-surface-card p-6 transition-colors hover:border-primary/30 hover:bg-surface-hover"
+              className="group relative rounded-xl border border-surface-border bg-surface-card p-6 transition-colors hover:border-primary/30 hover:bg-surface-hover"
             >
-              <Link href={`/portfolio/${p.id}`} className="block">
-                <h2 className="text-lg font-semibold text-white group-hover:text-primary-light">
+              <a href={`/portfolio/${p.id}`} className="block">
+                <h2 className="text-lg font-semibold text-text-primary group-hover:text-primary-light">
                   {p.kunde_name}
                 </h2>
-                <p className="mt-1 text-sm text-gray-400">
+                <p className="mt-1 text-sm text-text-muted">
                   {new Date(p.erstellt_am).toLocaleDateString("de-DE")}
                 </p>
-              </Link>
+              </a>
               <button
                 onClick={(e) => handleDelete(e, p.id)}
-                className="absolute right-4 top-4 rounded-md px-2 py-1 text-xs text-gray-500 hover:bg-red-500/10 hover:text-red-400"
+                className="absolute right-4 top-4 rounded-md px-2 py-1 text-xs text-text-muted hover:bg-accent-rose/10 hover:text-accent-rose"
               >
                 Loeschen
               </button>

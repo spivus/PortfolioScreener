@@ -71,6 +71,19 @@ export async function register(
   }
 }
 
+export async function uploadMusterportfolio(
+  file: File,
+): Promise<Record<string, unknown>> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await authFetch("/musterportfolio/upload", { method: "POST", body: formData });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || "Upload fehlgeschlagen");
+  }
+  return res.json();
+}
+
 export async function uploadPortfolio(
   file: File,
   kundeName: string,

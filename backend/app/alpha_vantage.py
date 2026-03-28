@@ -76,6 +76,20 @@ async def fetch_sma_200(symbol: str) -> float | None:
     return float(sma_data[latest_date]["SMA"])
 
 
+async def fetch_exchange_rate(from_currency: str, to_currency: str = "EUR") -> float | None:
+    """Holt den aktuellen Wechselkurs (z.B. USD -> EUR)."""
+    if from_currency.upper() == to_currency.upper():
+        return 1.0
+    data = await _get({
+        "function": "CURRENCY_EXCHANGE_RATE",
+        "from_currency": from_currency,
+        "to_currency": to_currency,
+    })
+    if not data or "Realtime Currency Exchange Rate" not in data:
+        return None
+    return float(data["Realtime Currency Exchange Rate"]["5. Exchange Rate"])
+
+
 async def fetch_market_data(symbol: str) -> dict:
     """Aggregiert Marktdaten fuer ein Symbol.
 

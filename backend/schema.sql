@@ -46,6 +46,9 @@ create table if not exists position (
     aktueller_kurs double precision,
     sma_200       double precision,
     ytd_performance double precision,
+    analysten_buy   integer,
+    analysten_hold  integer,
+    analysten_sell  integer,
     marktdaten_aktualisiert_am timestamptz
 );
 
@@ -111,11 +114,24 @@ create table if not exists muster_position (
     id                  uuid primary key default gen_random_uuid(),
     musterportfolio_id  uuid not null references musterportfolio(id) on delete cascade,
     isin                text,
+    symbol              text,
     name                text not null,
+    stueckzahl          double precision not null default 0,
+    kurs                double precision not null default 0,
     zielgewicht_prozent double precision not null default 0,
     assetklasse         text,
     branche             text,
-    region              text
+    region              text,
+    typ                 text,
+    land                text,
+    waehrung            text default 'EUR',
+    kurswert_eur        double precision,
+    aktueller_kurs      double precision,
+    sma_200             double precision,
+    analysten_buy       integer,
+    analysten_hold      integer,
+    analysten_sell      integer,
+    marktdaten_aktualisiert_am timestamptz
 );
 
 alter table muster_position enable row level security;

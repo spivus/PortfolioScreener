@@ -21,7 +21,8 @@ POSITION_SCHEMA = {
                     "symbol": {"anyOf": [{"type": "string"}, {"type": "null"}]},
                     "name": {"type": "string"},
                     "stueckzahl": {"type": "number"},
-                    "kurs": {"type": "number"},
+                    "kaufkurs": {"type": "number"},
+                    "kurswert_eur": {"anyOf": [{"type": "number"}, {"type": "null"}]},
                     "waehrung": {"type": "string"},
                     "land": {"anyOf": [{"type": "string"}, {"type": "null"}]},
                     "branche": {"anyOf": [{"type": "string"}, {"type": "null"}]},
@@ -34,7 +35,7 @@ POSITION_SCHEMA = {
                         ],
                     },
                 },
-                "required": ["name", "stueckzahl", "kurs", "waehrung", "typ", "branche", "symbol"],
+                "required": ["name", "stueckzahl", "kaufkurs", "waehrung", "typ", "branche", "symbol"],
             },
         }
     },
@@ -51,7 +52,13 @@ Regeln:
 - Erkenne Ticker-Symbole (z.B. AAPL, MSFT, NVDA) und setze sie in das Feld 'symbol'. \
 Deutsche Aktien brauchen den Suffix .DE (z.B. SAP.DE, ALV.DE, BAS.DE, DTE.DE, DHL.DE)
 - Normalisiere deutsche Zahlenformate: 1.234,56 -> 1234.56
-- Waehrung als ISO-Code (EUR, USD, CHF etc.)
+- kaufkurs ist der KAUFPREIS / Einstandskurs in der Heimatwaehrung. Suche nach Spalten wie \
+'Kaufkurs', 'Einstandskurs', 'Avg. Cost'. NICHT den aktuellen Marktpreis verwenden!
+- Waehrung als ISO-Code (EUR, USD, CHF etc.) - die Heimatwaehrung des Wertpapiers
+- kurswert_eur ist der aktuelle Gesamtwert der Position in EUR. Suche nach Spalten wie 'Kurswert', \
+'Marktwert', 'Wert EUR', 'Gesamtwert'. Dieser Wert ist IMMER in EUR (waehrungsbereinigt). \
+Bei Fremdwaehrungs-Positionen (z.B. USD) ist der Kurswert bereits umgerechnet. \
+Wenn keine solche Spalte vorhanden ist, setze null
 - Branche ist ein Pflichtfeld! Wenn das Dokument eine Spalte wie 'Sektor', 'Branche' oder \
 'Industrie' hat, uebernimm den Wert direkt. Ansonsten leite die Branche aus dem \
 Unternehmensnamen ab (z.B. Apple -> Technologie, Allianz -> Versicherung, BASF -> Chemie). \

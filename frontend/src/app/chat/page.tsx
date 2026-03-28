@@ -12,7 +12,6 @@ interface Message {
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [symbol, setSymbol] = useState("");
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -37,7 +36,6 @@ export default function ChatPage() {
         body: JSON.stringify({
           message: text,
           history: messages,
-          symbol: symbol.trim() || null,
         }),
       });
 
@@ -80,28 +78,8 @@ export default function ChatPage() {
               KI-Finanzassistent
             </h1>
             <p className="mt-0.5 text-sm text-text-muted">
-              Fragen zu Aktien, ETFs, Maerkten und Finanzthemen
+              Fragen zu Aktien, ETFs und Maerkten - mit Live-Marktdaten
             </p>
-          </div>
-        </div>
-
-        {/* Symbol Input */}
-        <div className="mb-4 opacity-0 animate-slide-up stagger-1">
-          <div className="flex items-center gap-3">
-            <label className="text-xs font-medium uppercase tracking-wider text-text-muted">
-              Symbol (optional)
-            </label>
-            <input
-              value={symbol}
-              onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-              placeholder="z.B. AAPL, SAP.DE, MSFT"
-              className="w-60 rounded-xl border border-surface-border bg-surface-raised px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/20 transition-all"
-            />
-            {symbol && (
-              <span className="stat-pill-green text-[11px]">
-                Marktdaten werden geladen
-              </span>
-            )}
           </div>
         </div>
 
