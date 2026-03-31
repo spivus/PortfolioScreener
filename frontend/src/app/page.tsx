@@ -35,6 +35,8 @@ interface MusterPosition {
   marktdaten_aktualisiert_am: string | null;
   waehrung: string | null;
   kurswert_eur: number | null;
+  perf_5d: number | null;
+  perf_ytd: number | null;
 }
 
 interface Musterportfolio {
@@ -42,6 +44,9 @@ interface Musterportfolio {
   name: string;
   beschreibung: string | null;
   positionen: MusterPosition[];
+  gesamt_wert: number;
+  gesamt_perf_5d: number;
+  gesamt_perf_ytd: number;
 }
 
 interface AnalyseEntry {
@@ -277,6 +282,30 @@ export default function Home() {
         </p>
       )}
 
+      {/* Performance Summary */}
+      {positions.length > 0 && (
+        <div className="mb-6 grid grid-cols-3 gap-4 opacity-0 animate-fade-in">
+          <div className="glass-card p-4">
+            <p className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Gesamtwert</p>
+            <p className="mt-1 text-xl font-bold text-text-primary">
+              {(mp?.gesamt_wert || totalValue).toLocaleString("de-DE", { maximumFractionDigits: 0 })} EUR
+            </p>
+          </div>
+          <div className="glass-card p-4">
+            <p className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Performance 5 Tage</p>
+            <p className={`mt-1 text-xl font-bold ${(mp?.gesamt_perf_5d || 0) >= 0 ? "text-accent-emerald" : "text-accent-rose"}`}>
+              {(mp?.gesamt_perf_5d || 0) >= 0 ? "+" : ""}{(mp?.gesamt_perf_5d || 0).toLocaleString("de-DE", { minimumFractionDigits: 2 })}%
+            </p>
+          </div>
+          <div className="glass-card p-4">
+            <p className="text-[11px] font-medium uppercase tracking-wider text-text-muted">Performance YTD</p>
+            <p className={`mt-1 text-xl font-bold ${(mp?.gesamt_perf_ytd || 0) >= 0 ? "text-accent-emerald" : "text-accent-rose"}`}>
+              {(mp?.gesamt_perf_ytd || 0) >= 0 ? "+" : ""}{(mp?.gesamt_perf_ytd || 0).toLocaleString("de-DE", { minimumFractionDigits: 2 })}%
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Positions Table */}
       {positions.length > 0 ? (
         <div className="mb-10 opacity-0 animate-slide-up stagger-1">
@@ -292,6 +321,8 @@ export default function Home() {
                     <th className="text-right">Gesamtposition (EUR)</th>
                     <th className="text-right">Akt. Kurs</th>
                     <th className="text-right">Gewichtung</th>
+                    <th className="text-right">Perf. 5T</th>
+                    <th className="text-right">YTD</th>
                     <th className="text-right">200 SMA</th>
                     <th>Branche</th>
                     <th>Region</th>
@@ -315,6 +346,8 @@ export default function Home() {
                         {pos.aktueller_kurs != null ? pos.aktueller_kurs.toLocaleString("de-DE", { minimumFractionDigits: 2 }) : "--"}
                       </td>
                       <td className="text-right font-mono text-text-secondary">{pos.gewichtung.toFixed(1)}%</td>
+                      <td className="text-right"><PctCell value={pos.perf_5d} /></td>
+                      <td className="text-right"><PctCell value={pos.perf_ytd} /></td>
                       <td className="text-right"><PctCell value={pos.abstand_sma_200} /></td>
                       <td className="text-text-muted">{pos.branche || "--"}</td>
                       <td className="text-text-muted">{pos.region || pos.land || "--"}</td>

@@ -112,7 +112,36 @@ async def get_company_profile(symbol: str) -> dict | None:
         "marktkapitalisierung": data.get("marketCapitalization"),
         "waehrung": data.get("currency"),
         "boerse": data.get("exchange"),
+        "ticker": data.get("ticker"),
     }
+
+
+async def search_symbol(name: str, expected_name: str | None = None) -> str | None:
+    """Sucht das korrekte Ticker-Symbol fuer einen Firmennamen via Finnhub.
+
+    Wenn expected_name angegeben, wird geprueft ob das Ergebnis zum Firmennamen passt.
+    """
+    data = await _get("/search", {"q": name})
+    if not data or not data.get("result"):
+        return None
+
+    def _matches(description: str) -> bool:
+        if not expected_name:
+            return True
+        # Pruefen ob die ersten Woerter des Firmennamens in der Beschreibung vorkommen
+        keywords = expected_name.lower().split()[:2]
+        desc_lower = description.lower()
+        return any(kw in desc_lower for kw in keywords)
+
+    # Erstes Ergebnis mit Typ "Common Stock" das zum Namen passt
+    for r in data["result"]:
+        if r.get("type") == "Common Stock" and _matches(r.get("description", "")):
+            return r["symbol"]
+    # Fallback: erstes Ergebnis das passt
+    for r in data["result"]:
+        if _matches(r.get("description", "")):
+            return r["symbol"]
+    return None
 
 
 async def get_forex_rates(base: str = "EUR") -> dict[str, float]:
@@ -131,44 +160,106 @@ async def get_forex_rates(base: str = "EUR") -> dict[str, float]:
         return data.get("rates", {})
 
 
-async def get_sma_200(symbol: str) -> float | None:
-    """200-Tage-SMA berechnet aus Yahoo Finance historischen Kursen."""
+async def fetch_historical_metrics(symbol: str) -> dict:
+    """SMA-200, Perf 5T und YTD aus Yahoo Finance historischen Kursen (1 Call).
+
+    Returns dict mit sma_200, perf_5d, perf_ytd (jeweils float | None).
+    """
     now = int(datetime.now().timestamp())
-    one_year_ago = int((datetime.now() - timedelta(days=300)).timestamp())
+    one_year_ago = int((datetime.now() - timedelta(days=400)).timestamp())
 
     url = (
         f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
         f"?period1={one_year_ago}&period2={now}&interval=1d"
     )
+    result = {"aktueller_kurs_yahoo": None, "sma_200": None, "perf_5d": None, "perf_ytd": None}
+
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
         if resp.status_code != 200:
-            return None
+            return result
         data = resp.json()
 
     try:
+        timestamps = data["chart"]["result"][0]["timestamp"]
         closes = data["chart"]["result"][0]["indicators"]["quote"][0]["close"]
-        closes = [c for c in closes if c is not None]
     except (KeyError, IndexError):
-        return None
+        return result
 
-    if len(closes) < 200:
-        return None
-    return round(sum(closes[-200:]) / 200, 2)
+    # Paare (date, close) filtern
+    pairs = [
+        (datetime.fromtimestamp(t).strftime("%Y-%m-%d"), c)
+        for t, c in zip(timestamps, closes) if c is not None
+    ]
+    if not pairs:
+        return result
+
+    current_price = pairs[-1][1]
+    result["aktueller_kurs_yahoo"] = round(current_price, 2)
+
+    # SMA-200
+    close_values = [c for _, c in pairs]
+    if len(close_values) >= 200:
+        result["sma_200"] = round(sum(close_values[-200:]) / 200, 2)
+
+    # Perf 5 Handelstage
+    if len(pairs) > 5:
+        price_5d = pairs[-6][1]
+        result["perf_5d"] = round((current_price - price_5d) / price_5d * 100, 2)
+
+    # Perf YTD (letzter Handelstag des Vorjahres)
+    current_year = datetime.now().year
+    prev_year_pairs = [(d, c) for d, c in pairs if d.startswith(str(current_year - 1))]
+    if prev_year_pairs:
+        year_start_price = prev_year_pairs[-1][1]
+        result["perf_ytd"] = round((current_price - year_start_price) / year_start_price * 100, 2)
+
+    return result
 
 
-async def fetch_market_data(symbol: str) -> dict:
-    """Aggregiert Marktdaten: aktueller Kurs (Finnhub) + SMA-200 (Yahoo).
+YAHOO_SUFFIX_MAP = {
+    "EUR": [".DE", ".F", ""],
+    "GBP": [".L", ""],
+    "CHF": [".SW", ""],
+    "DKK": [".CO", ""],
+    "SEK": [".ST", ""],
+    "NOK": [".OL", ""],
+    "JPY": [".T", ""],
+    "AUD": [".AX", ""],
+    "HKD": [".HK", ""],
+    "CAD": [".TO", ""],
+}
 
-    Returns dict mit aktueller_kurs, sma_200 (jeweils float | None).
+
+async def _resolve_yahoo_symbol(symbol: str, waehrung: str | None) -> dict:
+    """Versucht Yahoo-Suffixe basierend auf Waehrung, bis Daten gefunden werden."""
+    # Wenn Symbol schon einen Suffix hat, direkt verwenden
+    if "." in symbol:
+        return await fetch_historical_metrics(symbol)
+
+    suffixes = YAHOO_SUFFIX_MAP.get(waehrung or "USD", [""])
+    for suffix in suffixes:
+        hist = await fetch_historical_metrics(f"{symbol}{suffix}")
+        if hist.get("aktueller_kurs_yahoo") is not None:
+            return hist
+    return {"aktueller_kurs_yahoo": None, "sma_200": None, "perf_5d": None, "perf_ytd": None}
+
+
+async def fetch_market_data(symbol: str, waehrung: str | None = None) -> dict:
+    """Aggregiert Marktdaten: Finnhub + Yahoo (mit Exchange-Suffix-Fallback).
+
+    Returns dict mit aktueller_kurs, sma_200, perf_5d, perf_ytd.
     """
-    if not FINNHUB_API_KEY or not symbol:
-        return {"aktueller_kurs": None, "sma_200": None}
+    if not symbol:
+        return {"aktueller_kurs": None, "sma_200": None, "perf_5d": None, "perf_ytd": None}
 
     quote = await get_quote(symbol)
-    sma = await get_sma_200(symbol)  # Yahoo braucht kein Rate Limiting
+    hist = await _resolve_yahoo_symbol(symbol, waehrung)
+
+    finnhub_price = round(quote["kurs"], 2) if quote else None
+    yahoo_price = hist.pop("aktueller_kurs_yahoo", None)
 
     return {
-        "aktueller_kurs": round(quote["kurs"], 2) if quote else None,
-        "sma_200": sma,
+        "aktueller_kurs": finnhub_price or yahoo_price,
+        **hist,
     }

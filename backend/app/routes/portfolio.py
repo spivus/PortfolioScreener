@@ -76,7 +76,26 @@ async def get_portfolio(
     muster = sb.table("muster_position").select("isin, name").execute()
     enriched = _enrich_positions(positions.data, muster.data)
 
-    return {**portfolio.data, "positionen": enriched}
+    total_value = sum(
+        p["stueckzahl"] * (p.get("aktueller_kurs") or p["kurs"])
+        for p in enriched
+    )
+    gesamt_perf_5d = sum(
+        (p.get("perf_5d") or 0) * p["gewichtung"] / 100
+        for p in enriched
+    )
+    gesamt_perf_ytd = sum(
+        (p.get("perf_ytd") or 0) * p["gewichtung"] / 100
+        for p in enriched
+    )
+
+    return {
+        **portfolio.data,
+        "positionen": enriched,
+        "gesamt_wert": round(total_value, 2),
+        "gesamt_perf_5d": round(gesamt_perf_5d, 2),
+        "gesamt_perf_ytd": round(gesamt_perf_ytd, 2),
+    }
 
 
 @router.post("/portfolio/{portfolio_id}/refresh-market-data")
@@ -88,7 +107,7 @@ async def refresh_market_data(
 
     positions = (
         sb.table("position")
-        .select("id, symbol")
+        .select("id, symbol, waehrung")
         .eq("portfolio_id", portfolio_id)
         .execute()
     )
@@ -100,7 +119,7 @@ async def refresh_market_data(
         if not pos.get("symbol"):
             continue
 
-        data = await fetch_market_data(pos["symbol"])
+        data = await fetch_market_data(pos["symbol"], pos.get("waehrung"))
         rec = await get_recommendation(pos["symbol"])
 
         update_fields = {k: v for k, v in data.items() if v is not None}

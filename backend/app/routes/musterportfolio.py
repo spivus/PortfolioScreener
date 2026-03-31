@@ -8,7 +8,7 @@ from app.auth import get_current_user
 from app.database import get_supabase_for_user
 from app.parsers import extract_text_from_pdf, extract_text_from_excel, extract_text_from_csv
 from app.llm import parse_portfolio_text
-from app.finnhub import fetch_market_data, get_recommendation, get_forex_rates
+from app.finnhub import fetch_market_data, get_recommendation, get_forex_rates, search_symbol
 import os
 
 router = APIRouter(tags=["Musterportfolio"])
@@ -71,7 +71,23 @@ async def get_musterportfolio(request: Request, user=Depends(get_current_user)):
         else:
             pos["abstand_sma_200"] = None
 
-    return {**mp.data, "positionen": positions}
+    # Gesamt-Performance (gewichteter Durchschnitt)
+    gesamt_perf_5d = sum(
+        (pos.get("perf_5d") or 0) * pos["gewichtung"] / 100
+        for pos in positions
+    )
+    gesamt_perf_ytd = sum(
+        (pos.get("perf_ytd") or 0) * pos["gewichtung"] / 100
+        for pos in positions
+    )
+
+    return {
+        **mp.data,
+        "positionen": positions,
+        "gesamt_wert": round(total_value, 2),
+        "gesamt_perf_5d": round(gesamt_perf_5d, 2),
+        "gesamt_perf_ytd": round(gesamt_perf_ytd, 2),
+    }
 
 
 @router.put("/musterportfolio")
@@ -135,6 +151,14 @@ async def upload_musterportfolio(
         raise HTTPException(400, detail="Keine Inhalte in der Datei gefunden")
 
     positions = await parse_portfolio_text(raw_text)
+
+    # Symbol-Verifikation via Finnhub
+    for pos in positions:
+        if pos.get("symbol"):
+            continue
+        verified = await search_symbol(pos.get("name", ""))
+        if verified:
+            pos["symbol"] = verified
 
     sb = get_supabase_for_user(request.state.token)
     mp = sb.table("musterportfolio").select("id").limit(1).single().execute()

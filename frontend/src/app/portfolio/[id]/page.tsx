@@ -35,6 +35,8 @@ interface Position {
   analysten_hold: number | null;
   analysten_sell: number | null;
   marktdaten_aktualisiert_am: string | null;
+  perf_5d: number | null;
+  perf_ytd: number | null;
 }
 
 interface Portfolio {
@@ -42,6 +44,9 @@ interface Portfolio {
   kunde_name: string;
   erstellt_am: string;
   positionen: Position[];
+  gesamt_wert: number;
+  gesamt_perf_5d: number;
+  gesamt_perf_ytd: number;
 }
 
 interface AnalyseEntry {
@@ -360,10 +365,10 @@ export default function PortfolioDetailPage() {
         </div>
 
         {/* Summary Cards */}
-        <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
+        <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-5">
           <SummaryCard
             label="Portfoliowert"
-            value={`${totalValue.toLocaleString("de-DE", { minimumFractionDigits: 0, maximumFractionDigits: 0 })} EUR`}
+            value={`${(portfolio.gesamt_wert || totalValue).toLocaleString("de-DE", { maximumFractionDigits: 0 })} EUR`}
             delay="stagger-1"
           />
           <SummaryCard
@@ -378,9 +383,13 @@ export default function PortfolioDetailPage() {
             delay="stagger-3"
           />
           <SummaryCard
-            label="Marktdaten"
-            value={latestUpdate ? new Date(latestUpdate).toLocaleDateString("de-DE") : "--"}
-            sub={latestUpdate ? new Date(latestUpdate).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "Nicht aktualisiert"}
+            label="Performance 5 Tage"
+            value={`${(portfolio.gesamt_perf_5d || 0) >= 0 ? "+" : ""}${(portfolio.gesamt_perf_5d || 0).toFixed(2)}%`}
+            delay="stagger-4"
+          />
+          <SummaryCard
+            label="Performance YTD"
+            value={`${(portfolio.gesamt_perf_ytd || 0) >= 0 ? "+" : ""}${(portfolio.gesamt_perf_ytd || 0).toFixed(2)}%`}
             delay="stagger-4"
           />
         </div>
@@ -402,6 +411,7 @@ export default function PortfolioDetailPage() {
                     <th className="text-center">Muster</th>
                     <th className="text-right">Gewicht</th>
                     <th className="text-right">Rendite</th>
+                    <th className="text-right">Perf. 5T</th>
                     <th className="text-right">YTD</th>
                     <th className="text-center">Analysten (B/H/S)</th>
                   </tr>
@@ -452,7 +462,10 @@ export default function PortfolioDetailPage() {
                         <PctCell value={pos.rendite} />
                       </td>
                       <td className="text-right">
-                        <PctCell value={pos.ytd_performance} />
+                        <PctCell value={pos.perf_5d} />
+                      </td>
+                      <td className="text-right">
+                        <PctCell value={pos.perf_ytd} />
                       </td>
                       <td className="text-center">
                         {pos.analysten_buy != null ? (

@@ -1,5 +1,9 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+logging.basicConfig(level=logging.INFO)
 from app.config import CORS_ORIGINS, CORS_ORIGIN_REGEX
 from app.routes.auth import router as auth_router
 from app.routes.upload import router as upload_router
