@@ -14,7 +14,7 @@ from app.parsers import (
 )
 from app.llm import parse_portfolio_text
 from app.database import get_supabase_for_user
-from app.finnhub import search_symbol, get_quote, get_company_profile
+from app.finnhub import search_symbol, get_quote, get_company_profile, resolve_symbol_by_isin
 
 router = APIRouter(tags=["Upload"])
 
@@ -60,32 +60,39 @@ async def upload_portfolio(
     # LLM parsen
     positions = await parse_portfolio_text(raw_text)
 
-    # Symbol-Verifikation: LLM-Symbole pruefen, falsche korrigieren
+    # Symbol-Aufloesung: ISIN ist zuverlaessigste Quelle, dann LLM-Symbol pruefen
     for pos in positions:
+        isin = pos.get("isin")
         symbol = pos.get("symbol")
+
+        # 1. ISIN-basierte Aufloesung (primaer, zuverlaessig)
+        if isin:
+            resolved = await resolve_symbol_by_isin(isin, pos.get("name"))
+            if resolved:
+                logger.info("ISIN %s -> Symbol %s (war: %s)", isin, resolved, symbol)
+                pos["symbol"] = resolved
+                continue
+
+        # 2. LLM-Symbol validieren (Fallback)
         if symbol:
-            # Symbole mit Exchange-Suffix (.DE, .T etc.) akzeptieren (Finnhub-Quote geht nur US)
             if "." in symbol:
                 continue
-            # Nicht-USD: Lokalen Boersen-Ticker bevorzugen (z.B. ITOCY -> 8001.T)
             if pos.get("waehrung") and pos["waehrung"] != "USD":
                 profile = await get_company_profile(symbol)
                 if profile and profile.get("ticker") and profile["ticker"] != symbol:
                     logger.info("Lokalen Ticker verwenden: %s -> %s", symbol, profile["ticker"])
                     pos["symbol"] = profile["ticker"]
                 continue
-            # USD: Quote pruefen ob Symbol gueltig ist
             quote = await get_quote(symbol)
             if quote:
                 continue
             logger.info("Symbol '%s' fuer '%s' ungueltig, suche Ersatz", symbol, pos["name"])
-        # Suche per Name, dann per Symbol-Text, dann per ISIN
+
+        # 3. Finnhub-Suche als letzter Fallback
         name = pos.get("name", "")
         searched = await search_symbol(name, expected_name=name)
         if not searched and symbol:
             searched = await search_symbol(symbol, expected_name=name)
-        if not searched and pos.get("isin"):
-            searched = await search_symbol(pos["isin"], expected_name=name)
         if searched:
             logger.info("Symbol fuer '%s': %s -> %s", pos["name"], symbol, searched)
             pos["symbol"] = searched

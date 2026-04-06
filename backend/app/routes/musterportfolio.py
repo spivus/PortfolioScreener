@@ -8,7 +8,7 @@ from app.auth import get_current_user
 from app.database import get_supabase_for_user
 from app.parsers import extract_text_from_pdf, extract_text_from_excel, extract_text_from_csv
 from app.llm import parse_portfolio_text
-from app.finnhub import fetch_market_data, get_recommendation, get_forex_rates, search_symbol
+from app.finnhub import fetch_market_data, get_recommendation, get_forex_rates, search_symbol, fetch_fundamentals, fetch_analyst_target_async, resolve_symbol_by_isin
 import os
 
 router = APIRouter(tags=["Musterportfolio"])
@@ -189,6 +189,17 @@ async def upload_musterportfolio(
                 "waehrung": pos.get("waehrung", "EUR"),
                 "kurswert_eur": pos.get("kurswert_eur"),
             })
+
+        # Zielgewicht berechnen (basierend auf kurswert_eur oder stueckzahl * kurs)
+        total_value = sum(
+            r.get("kurswert_eur") or (r["stueckzahl"] * r["kurs"])
+            for r in rows
+        )
+        if total_value > 0:
+            for r in rows:
+                val = r.get("kurswert_eur") or (r["stueckzahl"] * r["kurs"])
+                r["zielgewicht_prozent"] = round(val / total_value * 100, 2)
+
         sb.table("muster_position").insert(rows).execute()
 
     return await get_musterportfolio(request, user)
@@ -207,7 +218,7 @@ async def refresh_muster_market_data(
 
     positions = (
         sb.table("muster_position")
-        .select("id, symbol, stueckzahl, waehrung")
+        .select("id, symbol, isin, name, stueckzahl, waehrung")
         .eq("musterportfolio_id", mp.data["id"])
         .execute()
     )
@@ -217,13 +228,25 @@ async def refresh_muster_market_data(
 
     updated = 0
     for pos in positions.data:
+        # Symbol per ISIN aufloesen wenn nicht vorhanden
+        if not pos.get("symbol") and pos.get("isin"):
+            resolved = await resolve_symbol_by_isin(pos["isin"], pos.get("name"))
+            if resolved:
+                pos["symbol"] = resolved
+                sb.table("muster_position").update({"symbol": resolved}).eq("id", pos["id"]).execute()
+
         if not pos.get("symbol"):
             continue
 
-        data = await fetch_market_data(pos["symbol"])
+        data = await fetch_market_data(pos["symbol"], pos.get("waehrung"))
         rec = await get_recommendation(pos["symbol"])
+        fundament = await fetch_fundamentals(pos["symbol"], pos.get("waehrung"))
+        target = await fetch_analyst_target_async(pos["symbol"])
 
         update_fields = {k: v for k, v in data.items() if v is not None}
+        # Yahoo-Werte (target) zuerst, Finnhub (fundament) ueberschreibt wenn vorhanden
+        update_fields.update({k: v for k, v in target.items() if v is not None})
+        update_fields.update({k: v for k, v in fundament.items() if v is not None})
         if rec:
             update_fields["analysten_buy"] = rec["buy"]
             update_fields["analysten_hold"] = rec["hold"]

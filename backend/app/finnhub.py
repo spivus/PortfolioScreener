@@ -1,11 +1,15 @@
 """Finnhub API-Client fuer Echtzeit-Kurse, News und Marktdaten."""
 
 import asyncio
+import logging
 import time
 from datetime import datetime, timedelta
 
 import httpx
+import yfinance as yf
 from app.config import FINNHUB_API_KEY
+
+logger = logging.getLogger(__name__)
 
 BASE_URL = "https://finnhub.io/api/v1"
 
@@ -98,6 +102,122 @@ async def get_recommendation(symbol: str) -> dict | None:
         "hold": latest.get("hold", 0),
         "sell": latest.get("sell", 0) + latest.get("strongSell", 0),
     }
+
+
+async def _yahoo_chart_meta(symbol: str) -> dict:
+    """52W-Hoch/Tief aus Yahoo Finance Chart-Metadaten."""
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d&range=5d"
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+        if resp.status_code != 200:
+            return {}
+        data = resp.json()
+    try:
+        return data["chart"]["result"][0]["meta"]
+    except (KeyError, IndexError):
+        return {}
+
+
+async def fetch_fundamentals(symbol: str, waehrung: str | None = None) -> dict:
+    """52W-Hoch, Forward KGV, Beta via Finnhub + Yahoo Fallback."""
+    result = {
+        "high_52w": None, "low_52w": None,
+        "forward_pe": None, "beta": None,
+    }
+    # Finnhub (funktioniert nur fuer US-Aktien)
+    data = await _get("/stock/metric", {"symbol": symbol, "metric": "all"})
+    if data and data.get("metric"):
+        m = data["metric"]
+        result["high_52w"] = m.get("52WeekHigh")
+        result["low_52w"] = m.get("52WeekLow")
+        result["forward_pe"] = round(m["forwardPE"], 2) if m.get("forwardPE") else None
+        result["beta"] = round(m["beta"], 2) if m.get("beta") else None
+
+    # Yahoo Fallback fuer 52W wenn Finnhub nichts liefert
+    if result["high_52w"] is None:
+        yahoo_sym = symbol
+        if "." not in symbol and waehrung:
+            suffixes = YAHOO_SUFFIX_MAP.get(waehrung, [""])
+            for suffix in suffixes:
+                meta = await _yahoo_chart_meta(f"{symbol}{suffix}")
+                if meta.get("fiftyTwoWeekHigh"):
+                    result["high_52w"] = meta["fiftyTwoWeekHigh"]
+                    result["low_52w"] = meta.get("fiftyTwoWeekLow")
+                    break
+        else:
+            meta = await _yahoo_chart_meta(yahoo_sym)
+            if meta.get("fiftyTwoWeekHigh"):
+                result["high_52w"] = meta["fiftyTwoWeekHigh"]
+                result["low_52w"] = meta.get("fiftyTwoWeekLow")
+
+    return result
+
+
+def fetch_analyst_target(symbol: str) -> dict:
+    """Analysten-Kursziel, Forward KGV und Beta via yfinance (synchron)."""
+    result = {"target_price": None, "target_potential": None,
+              "forward_pe": None, "beta": None}
+    try:
+        info = yf.Ticker(symbol).info
+        target = info.get("targetMeanPrice")
+        current = info.get("currentPrice")
+        if target and current and current > 0:
+            result["target_price"] = round(target, 2)
+            result["target_potential"] = round((target - current) / current * 100, 2)
+        fpe = info.get("forwardPE")
+        if fpe and fpe > 0:
+            result["forward_pe"] = round(fpe, 2)
+        b = info.get("beta")
+        if b:
+            result["beta"] = round(b, 2)
+    except Exception:
+        pass
+    return result
+
+
+async def fetch_analyst_target_async(symbol: str) -> dict:
+    """Async-Wrapper fuer yfinance (blockierender Call)."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, fetch_analyst_target, symbol)
+
+
+async def _yahoo_search(query: str) -> list[dict]:
+    """Yahoo Finance Search - gibt Liste von Quotes zurueck."""
+    url = "https://query2.finance.yahoo.com/v1/finance/search"
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(
+            url,
+            params={"q": query, "quotesCount": 10, "newsCount": 0},
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        if resp.status_code != 200:
+            return []
+        return resp.json().get("quotes", [])
+
+
+def _pick_best_symbol(quotes: list[dict]) -> str | None:
+    """Waehlt das beste Symbol aus Yahoo-Suchergebnissen (.DE bevorzugt)."""
+    if not quotes:
+        return None
+    # .DE-Symbol bevorzugen (Xetra, relevant fuer deutsche Berater)
+    for q in quotes:
+        sym = q.get("symbol", "")
+        if sym.endswith(".DE"):
+            return sym
+    return quotes[0].get("symbol")
+
+
+async def resolve_symbol_by_isin(isin: str, name: str | None = None) -> str | None:
+    """ISIN → Ticker via Yahoo Finance Search, mit Name-Fallback."""
+    quotes = await _yahoo_search(isin)
+    symbol = _pick_best_symbol(quotes)
+    if symbol:
+        return symbol
+    # Fallback: Name-basierte Suche
+    if name:
+        quotes = await _yahoo_search(name)
+        return _pick_best_symbol(quotes)
+    return None
 
 
 async def get_company_profile(symbol: str) -> dict | None:

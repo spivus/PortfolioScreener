@@ -37,6 +37,12 @@ interface Position {
   marktdaten_aktualisiert_am: string | null;
   perf_5d: number | null;
   perf_ytd: number | null;
+  high_52w: number | null;
+  low_52w: number | null;
+  forward_pe: number | null;
+  beta: number | null;
+  target_price: number | null;
+  target_potential: number | null;
 }
 
 interface Portfolio {
@@ -72,6 +78,75 @@ interface VergleichRow {
   vorhanden: boolean;
 }
 
+/* ── Column Config ── */
+
+type ColumnKey =
+  | "stueckzahl" | "kaufkurs" | "aktueller_kurs" | "abstand_sma_200"
+  | "branche" | "im_musterportfolio" | "gewichtung" | "rendite"
+  | "perf_5d" | "perf_ytd" | "analysten" | "high_52w" | "abstand_52w"
+  | "forward_pe" | "beta" | "target_potential";
+
+interface ColumnDef {
+  key: ColumnKey;
+  label: string;
+  align: "left" | "right" | "center";
+  default: boolean;
+}
+
+const ALL_COLUMNS: ColumnDef[] = [
+  { key: "stueckzahl", label: "Stueckzahl", align: "right", default: true },
+  { key: "kaufkurs", label: "Kaufkurs", align: "right", default: true },
+  { key: "aktueller_kurs", label: "Akt. Kurs", align: "right", default: true },
+  { key: "abstand_sma_200", label: "200 SMA", align: "right", default: true },
+  { key: "high_52w", label: "52W Hoch", align: "right", default: false },
+  { key: "abstand_52w", label: "Abstand 52W", align: "right", default: true },
+  { key: "forward_pe", label: "Fwd. KGV", align: "right", default: false },
+  { key: "beta", label: "Beta", align: "right", default: false },
+  { key: "target_potential", label: "Analysten-Potenzial", align: "right", default: true },
+  { key: "branche", label: "Branche", align: "left", default: true },
+  { key: "im_musterportfolio", label: "Muster", align: "center", default: true },
+  { key: "gewichtung", label: "Gewicht", align: "right", default: true },
+  { key: "rendite", label: "Rendite", align: "right", default: true },
+  { key: "perf_5d", label: "Perf. 5T", align: "right", default: true },
+  { key: "perf_ytd", label: "YTD", align: "right", default: true },
+  { key: "analysten", label: "Analysten (B/H/S)", align: "center", default: true },
+];
+
+const STORAGE_KEY = "portfolio-visible-columns";
+
+function getInitialColumns(): ColumnKey[] {
+  if (typeof window === "undefined") return ALL_COLUMNS.filter(c => c.default).map(c => c.key);
+  const stored = localStorage.getItem(STORAGE_KEY);
+  if (stored) return JSON.parse(stored);
+  return ALL_COLUMNS.filter(c => c.default).map(c => c.key);
+}
+
+/* ── Sort ── */
+
+type SortDir = "asc" | "desc" | null;
+
+function getSortValue(pos: Position, key: ColumnKey): number | string {
+  switch (key) {
+    case "stueckzahl": return pos.stueckzahl;
+    case "kaufkurs": return pos.kaufkurs;
+    case "aktueller_kurs": return pos.aktueller_kurs ?? -Infinity;
+    case "abstand_sma_200": return pos.abstand_sma_200 ?? -Infinity;
+    case "high_52w": return pos.high_52w ?? -Infinity;
+    case "abstand_52w": return pos.high_52w && pos.aktueller_kurs ? ((pos.aktueller_kurs / pos.high_52w * 100 - 100)) : -Infinity;
+    case "target_potential": return pos.target_potential ?? -Infinity;
+    case "forward_pe": return pos.forward_pe ?? Infinity;
+    case "beta": return pos.beta ?? -Infinity;
+    case "branche": return pos.branche ?? "zzz";
+    case "im_musterportfolio": return pos.im_musterportfolio ? 1 : 0;
+    case "gewichtung": return pos.gewichtung;
+    case "rendite": return pos.rendite;
+    case "perf_5d": return pos.perf_5d ?? -Infinity;
+    case "perf_ytd": return pos.perf_ytd ?? -Infinity;
+    case "analysten": return pos.analysten_buy ?? -Infinity;
+    default: return 0;
+  }
+}
+
 /* ── Constants ── */
 
 const DONUT_COLORS = [
@@ -94,6 +169,38 @@ function PctCell({ value }: { value: number | null }) {
       {positive ? "+" : ""}
       {value.toLocaleString("de-DE", { minimumFractionDigits: 2 })}%
     </span>
+  );
+}
+
+function SortTh({
+  label,
+  sortKey,
+  currentKey,
+  dir,
+  align = "left",
+  onSort,
+}: {
+  label: string;
+  sortKey: string;
+  currentKey: string | null;
+  dir: SortDir;
+  align?: "left" | "right" | "center";
+  onSort: (key: string, dir: SortDir) => void;
+}) {
+  const active = currentKey === sortKey;
+  const nextDir = !active ? "asc" : dir === "asc" ? "desc" : null;
+  const alignClass = align === "right" ? "text-right" : align === "center" ? "text-center" : "";
+  return (
+    <th
+      className={`${alignClass} cursor-pointer select-none transition-colors hover:text-primary`}
+      onClick={() => onSort(sortKey, nextDir)}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {active && dir === "asc" && <span className="text-primary">&#9650;</span>}
+        {active && dir === "desc" && <span className="text-primary">&#9660;</span>}
+      </span>
+    </th>
   );
 }
 
@@ -213,6 +320,10 @@ export default function PortfolioDetailPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [visibleCols, setVisibleCols] = useState<ColumnKey[]>(getInitialColumns);
+  const [showColPicker, setShowColPicker] = useState(false);
+  const [sortKey, setSortKey] = useState<ColumnKey | "name" | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>(null);
 
   async function loadPortfolio() {
     const res = await authFetch(`/portfolio/${id}`);
@@ -310,6 +421,25 @@ export default function PortfolioDetailPage() {
     (p) => p.im_musterportfolio
   ).length;
 
+  const sortedPositions = (() => {
+    if (!sortKey || !sortDir) return portfolio.positionen;
+    const sorted = [...portfolio.positionen].sort((a, b) => {
+      let va: string | number;
+      let vb: string | number;
+      if (sortKey === "name") {
+        va = a.name.toLowerCase();
+        vb = b.name.toLowerCase();
+      } else {
+        va = getSortValue(a, sortKey as ColumnKey);
+        vb = getSortValue(b, sortKey as ColumnKey);
+      }
+      if (va < vb) return sortDir === "asc" ? -1 : 1;
+      if (va > vb) return sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+    return sorted;
+  })();
+
   return (
     <RequireAuth>
       <div className="mx-auto max-w-7xl px-6 py-8">
@@ -396,28 +526,55 @@ export default function PortfolioDetailPage() {
 
         {/* Positions Table */}
         <div className="mb-10 opacity-0 animate-slide-up stagger-2">
-          <h2 className="section-heading mb-5">Positionen</h2>
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="section-heading">Positionen</h2>
+            <div className="relative">
+              <button
+                onClick={() => setShowColPicker(!showColPicker)}
+                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[12px] text-text-muted transition-colors hover:bg-white/10 hover:text-text-secondary"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                Indikatoren
+              </button>
+              {showColPicker && (
+                <div className="absolute right-0 top-full z-20 mt-1 w-52 rounded-xl border border-white/10 bg-[#0C1425] p-3 shadow-xl">
+                  {ALL_COLUMNS.map((col) => (
+                    <label key={col.key} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-[12px] text-text-secondary hover:bg-white/5">
+                      <input
+                        type="checkbox"
+                        checked={visibleCols.includes(col.key)}
+                        onChange={() => {
+                          const next = visibleCols.includes(col.key)
+                            ? visibleCols.filter(k => k !== col.key)
+                            : [...visibleCols, col.key];
+                          setVisibleCols(next);
+                          localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+                        }}
+                        className="h-3.5 w-3.5 rounded border-white/20 bg-white/5 accent-primary"
+                      />
+                      {col.label}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
           <div className="glass-card overflow-hidden">
             <div className="overflow-x-auto">
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Name</th>
-                    <th className="text-right">Stueckzahl</th>
-                    <th className="text-right">Kaufkurs</th>
-                    <th className="text-right">Akt. Kurs</th>
-                    <th className="text-right">200 SMA</th>
-                    <th>Branche</th>
-                    <th className="text-center">Muster</th>
-                    <th className="text-right">Gewicht</th>
-                    <th className="text-right">Rendite</th>
-                    <th className="text-right">Perf. 5T</th>
-                    <th className="text-right">YTD</th>
-                    <th className="text-center">Analysten (B/H/S)</th>
+                    <SortTh label="Name" sortKey="name" currentKey={sortKey} dir={sortDir} onSort={(k, d) => { setSortKey(k as ColumnKey | "name"); setSortDir(d); }} />
+                    {ALL_COLUMNS.filter(c => visibleCols.includes(c.key)).map(col => (
+                      <SortTh key={col.key} label={col.label} sortKey={col.key} currentKey={sortKey} dir={sortDir} align={col.align} onSort={(k, d) => { setSortKey(k as ColumnKey); setSortDir(d); }} />
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {portfolio.positionen.map((pos, i) => (
+                  {sortedPositions.map((pos, i) => (
                     <tr key={pos.id || i}>
                       <td className="font-medium text-text-primary">
                         {pos.name}
@@ -427,59 +584,96 @@ export default function PortfolioDetailPage() {
                           </span>
                         )}
                       </td>
-                      <td className="text-right font-mono text-text-secondary">
-                        {pos.stueckzahl.toLocaleString("de-DE")}
-                      </td>
-                      <td className="text-right font-mono text-text-secondary">
-                        {pos.kaufkurs.toLocaleString("de-DE", {
-                          minimumFractionDigits: 2,
-                        })}
-                      </td>
-                      <td className="text-right font-mono text-text-secondary">
-                        {pos.aktueller_kurs != null
-                          ? pos.aktueller_kurs.toLocaleString("de-DE", {
-                              minimumFractionDigits: 2,
-                            })
-                          : "--"}
-                      </td>
-                      <td className="text-right">
-                        <PctCell value={pos.abstand_sma_200} />
-                      </td>
-                      <td className="text-text-muted">
-                        {pos.branche || "--"}
-                      </td>
-                      <td className="text-center">
-                        {pos.im_musterportfolio ? (
-                          <span className="stat-pill-green">Ja</span>
-                        ) : (
-                          <span className="text-text-muted">--</span>
-                        )}
-                      </td>
-                      <td className="text-right font-mono text-text-secondary">
-                        {pos.gewichtung.toFixed(1)}%
-                      </td>
-                      <td className="text-right">
-                        <PctCell value={pos.rendite} />
-                      </td>
-                      <td className="text-right">
-                        <PctCell value={pos.perf_5d} />
-                      </td>
-                      <td className="text-right">
-                        <PctCell value={pos.perf_ytd} />
-                      </td>
-                      <td className="text-center">
-                        {pos.analysten_buy != null ? (
-                          <span className="text-xs font-mono">
-                            <span className="text-accent-emerald">{pos.analysten_buy}</span>
-                            {" / "}
-                            <span className="text-text-muted">{pos.analysten_hold}</span>
-                            {" / "}
-                            <span className="text-accent-rose">{pos.analysten_sell}</span>
-                          </span>
-                        ) : (
-                          <span className="text-text-muted">--</span>
-                        )}
-                      </td>
+                      {visibleCols.includes("stueckzahl") && (
+                        <td className="text-right font-mono text-text-secondary">
+                          {pos.stueckzahl.toLocaleString("de-DE")}
+                        </td>
+                      )}
+                      {visibleCols.includes("kaufkurs") && (
+                        <td className="text-right font-mono text-text-secondary">
+                          {pos.kaufkurs.toLocaleString("de-DE", { minimumFractionDigits: 2 })}
+                        </td>
+                      )}
+                      {visibleCols.includes("aktueller_kurs") && (
+                        <td className="text-right font-mono text-text-secondary">
+                          {pos.aktueller_kurs != null
+                            ? pos.aktueller_kurs.toLocaleString("de-DE", { minimumFractionDigits: 2 })
+                            : "--"}
+                        </td>
+                      )}
+                      {visibleCols.includes("abstand_sma_200") && (
+                        <td className="text-right"><PctCell value={pos.abstand_sma_200} /></td>
+                      )}
+                      {visibleCols.includes("high_52w") && (
+                        <td className="text-right font-mono text-text-secondary">
+                          {pos.high_52w != null
+                            ? pos.high_52w.toLocaleString("de-DE", { minimumFractionDigits: 2 })
+                            : "--"}
+                        </td>
+                      )}
+                      {visibleCols.includes("abstand_52w") && (
+                        <td className="text-right">
+                          {pos.high_52w != null && pos.aktueller_kurs != null ? (
+                            <PctCell value={Math.round((pos.aktueller_kurs / pos.high_52w * 100 - 100) * 100) / 100} />
+                          ) : <span className="text-text-muted">--</span>}
+                        </td>
+                      )}
+                      {visibleCols.includes("forward_pe") && (
+                        <td className="text-right font-mono text-text-secondary">
+                          {pos.forward_pe != null ? pos.forward_pe.toFixed(1) : "--"}
+                        </td>
+                      )}
+                      {visibleCols.includes("beta") && (
+                        <td className="text-right font-mono text-text-secondary">
+                          {pos.beta != null ? pos.beta.toFixed(2) : "--"}
+                        </td>
+                      )}
+                      {visibleCols.includes("target_potential") && (
+                        <td className="text-right">
+                          {pos.target_potential != null ? (
+                            <PctCell value={pos.target_potential} />
+                          ) : <span className="text-text-muted">--</span>}
+                        </td>
+                      )}
+                      {visibleCols.includes("branche") && (
+                        <td className="text-text-muted">{pos.branche || "--"}</td>
+                      )}
+                      {visibleCols.includes("im_musterportfolio") && (
+                        <td className="text-center">
+                          {pos.im_musterportfolio ? (
+                            <span className="stat-pill-green">Ja</span>
+                          ) : (
+                            <span className="text-text-muted">--</span>
+                          )}
+                        </td>
+                      )}
+                      {visibleCols.includes("gewichtung") && (
+                        <td className="text-right font-mono text-text-secondary">{pos.gewichtung.toFixed(1)}%</td>
+                      )}
+                      {visibleCols.includes("rendite") && (
+                        <td className="text-right"><PctCell value={pos.rendite} /></td>
+                      )}
+                      {visibleCols.includes("perf_5d") && (
+                        <td className="text-right"><PctCell value={pos.perf_5d} /></td>
+                      )}
+                      {visibleCols.includes("perf_ytd") && (
+                        <td className="text-right"><PctCell value={pos.perf_ytd} /></td>
+                      )}
+                      {visibleCols.includes("analysten") && (
+                        <td className="text-center">
+                          {pos.analysten_buy != null ? (
+                            <span className="text-xs font-mono">
+                              <span className="text-accent-emerald">{pos.analysten_buy}</span>
+                              {" / "}
+                              <span className="text-text-muted">{pos.analysten_hold}</span>
+                              {" / "}
+                              <span className="text-accent-rose">{pos.analysten_sell}</span>
+                            </span>
+                          ) : (
+                            <span className="text-text-muted">--</span>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

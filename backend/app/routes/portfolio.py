@@ -1,19 +1,48 @@
 """Portfolio CRUD-Endpunkte."""
 
 import asyncio
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from app.auth import get_current_user
 from app.database import get_supabase_for_user
-from app.finnhub import fetch_market_data, get_recommendation
+from app.finnhub import fetch_market_data, get_recommendation, fetch_fundamentals, fetch_analyst_target_async, resolve_symbol_by_isin
 
 router = APIRouter(tags=["Portfolio"])
+
+_NAME_NOISE = re.compile(
+    r"\b(inc\.?|corp\.?|ltd\.?|plc\.?|ag|se|sa|co\.?|group|holdings?|"
+    r"class\s*[a-z]|rg|n\.?v\.?|& co\.?\s*kg[a]?[a]?)\b",
+    re.IGNORECASE,
+)
+
+
+def _normalize_name(name: str) -> str:
+    """Normalisiert Firmennamen fuer flexibles Matching."""
+    n = _NAME_NOISE.sub("", name)
+    n = re.sub(r"[^\w\s]", " ", n)
+    return " ".join(n.lower().split())
+
+
+def _names_match(a: str, b: str) -> bool:
+    """Prueft ob zwei Firmennamen zusammenpassen (flexibel)."""
+    na, nb = _normalize_name(a), _normalize_name(b)
+    if na == nb:
+        return True
+    # Kuerzeren Namen im laengeren suchen
+    short, long = (na, nb) if len(na) <= len(nb) else (nb, na)
+    if short and long.startswith(short):
+        return True
+    # Erste 2 Woerter vergleichen
+    wa, wb = na.split()[:2], nb.split()[:2]
+    return len(wa) >= 2 and wa == wb
 
 
 def _enrich_positions(positions: list[dict], muster_data: list[dict]) -> list[dict]:
     """Berechnet abgeleitete Felder fuer jede Position."""
     muster_isins = {m["isin"].upper() for m in muster_data if m.get("isin")}
-    muster_names = {m["name"].strip().lower() for m in muster_data if m.get("name")}
+    muster_symbols = {m["symbol"].upper() for m in muster_data if m.get("symbol")}
+    muster_names_list = [m["name"] for m in muster_data if m.get("name")]
 
     total_value = sum(
         p["stueckzahl"] * (p.get("aktueller_kurs") or p["kurs"])
@@ -30,10 +59,13 @@ def _enrich_positions(positions: list[dict], muster_data: list[dict]) -> list[di
             round((current_price - pos["sma_200"]) / pos["sma_200"] * 100, 2)
             if pos.get("sma_200") else None
         )
-        pos["im_musterportfolio"] = (
+        matched = (
             (bool(pos.get("isin")) and pos["isin"].upper() in muster_isins)
-            or (bool(pos.get("name")) and pos["name"].strip().lower() in muster_names)
+            or (bool(pos.get("symbol")) and pos["symbol"].upper() in muster_symbols)
         )
+        if not matched and pos.get("name"):
+            matched = any(_names_match(pos["name"], mn) for mn in muster_names_list)
+        pos["im_musterportfolio"] = matched
         pos["gewichtung"] = round(position_value / total_value * 100, 2) if total_value > 0 else 0
         pos["rendite"] = round((current_price - kaufkurs) / kaufkurs * 100, 2) if kaufkurs > 0 else 0
 
@@ -73,7 +105,7 @@ async def get_portfolio(
         .execute()
     )
 
-    muster = sb.table("muster_position").select("isin, name").execute()
+    muster = sb.table("muster_position").select("isin, name, symbol").execute()
     enriched = _enrich_positions(positions.data, muster.data)
 
     total_value = sum(
@@ -107,7 +139,7 @@ async def refresh_market_data(
 
     positions = (
         sb.table("position")
-        .select("id, symbol, waehrung")
+        .select("id, symbol, isin, name, waehrung")
         .eq("portfolio_id", portfolio_id)
         .execute()
     )
@@ -116,13 +148,25 @@ async def refresh_market_data(
 
     updated = 0
     for pos in positions.data:
+        # Symbol per ISIN aufloesen wenn nicht vorhanden
+        if not pos.get("symbol") and pos.get("isin"):
+            resolved = await resolve_symbol_by_isin(pos["isin"], pos.get("name"))
+            if resolved:
+                pos["symbol"] = resolved
+                sb.table("position").update({"symbol": resolved}).eq("id", pos["id"]).execute()
+
         if not pos.get("symbol"):
             continue
 
         data = await fetch_market_data(pos["symbol"], pos.get("waehrung"))
         rec = await get_recommendation(pos["symbol"])
+        fundament = await fetch_fundamentals(pos["symbol"], pos.get("waehrung"))
+        target = await fetch_analyst_target_async(pos["symbol"])
 
         update_fields = {k: v for k, v in data.items() if v is not None}
+        # Yahoo-Werte (target) zuerst, Finnhub (fundament) ueberschreibt wenn vorhanden
+        update_fields.update({k: v for k, v in target.items() if v is not None})
+        update_fields.update({k: v for k, v in fundament.items() if v is not None})
         if rec:
             update_fields["analysten_buy"] = rec["buy"]
             update_fields["analysten_hold"] = rec["hold"]
@@ -136,16 +180,20 @@ async def refresh_market_data(
     return {"aktualisiert": updated, "gesamt": len(positions.data)}
 
 
-def _match_position(pos: dict, muster_isins: dict, muster_names: dict) -> str | None:
-    """Findet die passende Muster-Position-ID via ISIN oder Name."""
+def _match_position(pos: dict, muster_isins: dict, muster_names: list, muster_symbols: dict) -> str | None:
+    """Findet die passende Muster-Position-ID via ISIN, Symbol oder Name."""
     if pos.get("isin"):
         mp_id = muster_isins.get(pos["isin"].upper())
         if mp_id:
             return mp_id
-    if pos.get("name"):
-        mp_id = muster_names.get(pos["name"].strip().lower())
+    if pos.get("symbol"):
+        mp_id = muster_symbols.get(pos["symbol"].upper())
         if mp_id:
             return mp_id
+    if pos.get("name"):
+        for mname, mid in muster_names:
+            if _names_match(pos["name"], mname):
+                return mid
     return None
 
 
@@ -179,15 +227,19 @@ async def get_vergleich(
         m["isin"].upper(): m["id"]
         for m in muster_positions.data if m.get("isin")
     }
-    muster_names = {
-        m["name"].strip().lower(): m["id"]
+    muster_names = [
+        (m["name"], m["id"])
         for m in muster_positions.data if m.get("name")
+    ]
+    muster_symbols = {
+        m["symbol"].upper(): m["id"]
+        for m in muster_positions.data if m.get("symbol")
     }
 
     # Kundenposition → Muster-Position matchen
     matched: dict[str, float] = {}  # muster_id → ist_gewicht
     for pos in positions.data:
-        mp_id = _match_position(pos, muster_isins, muster_names)
+        mp_id = _match_position(pos, muster_isins, muster_names, muster_symbols)
         if mp_id:
             current_price = pos.get("aktueller_kurs") or pos["kurs"]
             ist_gewicht = (pos["stueckzahl"] * current_price / total_value * 100) if total_value > 0 else 0
